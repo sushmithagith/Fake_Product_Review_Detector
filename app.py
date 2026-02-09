@@ -48,7 +48,6 @@ def extract_red_flags(text):
         flags.append("Very short & unrealistic review")
 
     return flags
-
 # ===============================
 # INPUT
 # ===============================
@@ -62,7 +61,10 @@ if st.button("Analyze Review"):
         vec = vectorizer.transform([clean])
 
         lr_prob = lr_model.predict_proba(vec)[0]
-        lr_pred = lr_model.predict(vec)[0]
+
+        # IMPORTANT: correct probability mapping
+        genuine_prob = lr_prob[0]
+        fake_prob = lr_prob[1]
 
         red_flags = extract_red_flags(review)
 
@@ -70,59 +72,41 @@ if st.button("Analyze Review"):
         # CONFIDENCE BARS
         # ===============================
         st.subheader("📊 Prediction Confidence")
-        st.progress(float(lr_prob[1]))
-        st.write(f"Fake: **{lr_prob[1]*100:.2f}%**")
-        st.write(f"Genuine: **{lr_prob[0]*100:.2f}%**")
+
+        if fake_prob > genuine_prob:
+            st.progress(float(fake_prob))
+        else:
+            st.progress(float(genuine_prob))
+
+        st.write(f"Fake: **{fake_prob*100:.2f}%**")
+        st.write(f"Genuine: **{genuine_prob*100:.2f}%**")
 
         # ===============================
-        # FINAL VERDICT LOGIC
+        # FINAL VERDICT (FIXED)
         # ===============================
         st.subheader("✅ Final Verdict")
 
-        # Override ML if strong fake signals
-        if lr_pred == 1 or len(red_flags) >= 2:
+        # Base decision on probability
+        if fake_prob > genuine_prob:
+            verdict = "FAKE"
+        else:
+            verdict = "GENUINE"
+
+        # Optional override only if VERY strong signals
+        if verdict == "GENUINE" and len(red_flags) >= 3:
+            verdict = "FAKE"
+
+        # Display result
+        if verdict == "FAKE":
             st.error("❌ FAKE REVIEW")
 
             st.markdown("**Reason:**")
-            for r in red_flags:
-                st.write(f"- {r}")
-
-            if not red_flags:
-                st.write("- Model detected deceptive language patterns")
+            if red_flags:
+                for r in red_flags:
+                    st.write(f"- {r}")
+            else:
+                st.write("- Model detected deceptive patterns")
 
         else:
             st.success("✅ GENUINE REVIEW")
-            st.info("Reason: Balanced opinion and realistic user experience")
-
-# ===============================
-# VISUAL EVALUATION
-# ===============================
-st.divider()
-st.subheader("📌 Model Evaluation")
-
-col1, col2 = st.columns(2)
-
-# Confusion Matrix (smaller)
-with col1:
-    fig1, ax1 = plt.subplots(figsize=(3, 3))
-    sns.heatmap(
-        conf_matrix,
-        annot=True,
-        fmt="d",
-        cmap="Blues",
-        cbar=False,
-        xticklabels=["Genuine", "Fake"],
-        yticklabels=["Genuine", "Fake"],
-        ax=ax1
-    )
-    ax1.set_title("Confusion Matrix")
-    st.pyplot(fig1)
-
-# ROC Curve (smaller)
-with col2:
-    fig2, ax2 = plt.subplots(figsize=(3, 3))
-    ax2.plot(fpr, tpr, label=f"AUC = {roc_auc:.2f}")
-    ax2.plot([0, 1], [0, 1], linestyle="--")
-    ax2.set_title("ROC Curve")
-    ax2.legend()
-    st.pyplot(fig2)
+            st.info("Reason: Higher genuine probability and realistic language")
